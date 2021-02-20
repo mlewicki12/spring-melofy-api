@@ -2,8 +2,14 @@
 package com.mlewicki12.melofyapi.controllers;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonParser;
 import com.mlewicki12.melofyapi.SpotifyRepository;
-import com.mlewicki12.melofyapi.models.SpotifyAuthResponse;
+import com.mlewicki12.melofyapi.models.SpotifyAuth;
+import com.wrapper.spotify.SpotifyApi;
+import com.wrapper.spotify.exceptions.SpotifyWebApiException;
+import com.wrapper.spotify.model_objects.specification.User;
+import io.netty.util.internal.StringUtil;
+import org.apache.hc.core5.http.ParseException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
@@ -16,9 +22,23 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import org.springframework.web.servlet.view.RedirectView;
 
+import java.io.IOException;
+import java.util.NoSuchElementException;
+import java.util.UUID;
+
 @RestController
 @RequestMapping("/spotify")
 public class SpotifyController {
+    private class ApiError {
+        private final String message;
+        private final Exception exception;
+
+        public ApiError(String message, Exception exception) {
+            this.message = message;
+            this.exception = exception;
+        }
+    }
+
     private final WebClient webClient;
 
     @Autowired
@@ -32,6 +52,8 @@ public class SpotifyController {
 
     @Value("${MELOFY_SECRET:not set}")
     private String client_secret;
+
+    private SpotifyApi spotifyApi;
 
     public SpotifyController() {
         webClient = WebClient.create("http://localhost:8080");
@@ -61,11 +83,55 @@ public class SpotifyController {
             }).retrieve().bodyToMono(String.class);
 
         String userJson = request.block();
-        SpotifyAuthResponse user = gson.fromJson(userJson, SpotifyAuthResponse.class);
+        SpotifyAuth user = gson.fromJson(userJson, SpotifyAuth.class);
 
         spotifyRepository.save(user);
 
-        attributes.addAttribute("access_token", user.getAccessToken());
+        // todo figure out how this handles with more than one user
+        // i think i need a user map here or smth idk i dont have the social skills for networking
+        spotifyApi = new SpotifyApi.Builder()
+            .setAccessToken(user.getAccessToken())
+            .build();
+
+        attributes.addAttribute("user_id", user.getUuid());
         return new RedirectView("http://localhost:4200");
+    }
+
+    @GetMapping("/user")
+    public ResponseEntity<Object> userInfo(@RequestParam(required = false) UUID user_id) {
+        final String uri = "https://api.spotify.com/v1/me";
+
+        if(user_id == null) {
+            if(StringUtil.isNullOrEmpty(spotifyApi.getAccessToken())) {
+                return new ResponseEntity<>(
+                    new ApiError("Melofy: no user_id provided and access token not found", null),
+                    HttpStatus.BAD_REQUEST
+                );
+            }
+        } else {
+            try {
+                SpotifyAuth userOpt = spotifyRepository.findById(user_id).get();
+                spotifyApi.setAccessToken(userOpt.getAccessToken());
+            } catch(NoSuchElementException exception) {
+                // todo write a test for non-existent user
+                return new ResponseEntity<>(
+                    new ApiError(String.format("Melofy: no user found with user_id %s", user_id), null),
+                    HttpStatus.BAD_REQUEST
+                );
+            }
+        }
+
+        try {
+            User profile = spotifyApi.getCurrentUsersProfile().build().execute();
+            return new ResponseEntity<>(
+                profile,
+                HttpStatus.OK
+            );
+        } catch(IOException | SpotifyWebApiException | ParseException exception) {
+            return new ResponseEntity<>(
+                    new ApiError("Melofy: encountered exception on request", exception),
+                    HttpStatus.BAD_GATEWAY
+            );
+        }
     }
 }

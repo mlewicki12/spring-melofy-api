@@ -2,6 +2,7 @@ package com.mlewicki12.melofyapi.models;
 
 import com.google.gson.annotations.SerializedName;
 import org.hibernate.annotations.GenericGenerator;
+import org.hibernate.annotations.Type;
 
 import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
@@ -9,13 +10,14 @@ import javax.persistence.Id;
 import java.util.UUID;
 
 @Entity
-public class SpotifyAuthResponse {
+public class SpotifyAuth {
     @Id
     @GeneratedValue(generator="UUID")
     @GenericGenerator(
             name = "UUID",
             strategy = "org.hibernate.id.UUIDGenerator"
     )
+    @Type(type = "org.hibernate.type.UUIDCharType")
     @SerializedName("uuid")
     private UUID uuid;
 
