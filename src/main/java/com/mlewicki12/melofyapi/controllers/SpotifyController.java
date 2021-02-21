@@ -129,8 +129,8 @@ public class SpotifyController {
             );
         } catch(IOException | SpotifyWebApiException | ParseException exception) {
             return new ResponseEntity<>(
-                    new ApiError("Melofy: encountered exception on request", exception),
-                    HttpStatus.BAD_GATEWAY
+                new ApiError("Melofy: encountered exception on request", exception),
+                HttpStatus.BAD_GATEWAY
             );
         }
     }
